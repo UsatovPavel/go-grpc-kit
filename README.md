@@ -153,8 +153,10 @@ Client chain, outermost first:
 error mapping → logging → call timeout → user interceptors → transport
 ```
 
-The client logger sees raw statuses, and the default timeout applies only
-when the caller's context has no deadline.
+The client logger sees raw statuses. The call timeout caps every unary
+call: the effective deadline is the earlier of the caller's deadline and
+the configured timeout, so a generous upstream deadline can't let a
+downstream call run unbounded.
 
 ### Graceful shutdown
 

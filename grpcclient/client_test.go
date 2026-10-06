@@ -32,9 +32,10 @@ func TestTimeoutInterceptor(t *testing.T) {
 		wantAtLeast time.Duration
 		wantAtMost  time.Duration
 	}{
-		{"applies default when none", timeout, 0, true, timeout - 100*time.Millisecond, timeout},
-		{"keeps shorter deadline", timeout, 100 * time.Millisecond, true, 0, 100 * time.Millisecond},
-		{"keeps longer deadline", timeout, time.Hour, true, time.Hour - time.Minute, time.Hour},
+		{"applies timeout when no deadline", timeout, 0, true, timeout - 100*time.Millisecond, timeout},
+		{"keeps shorter caller deadline", timeout, 100 * time.Millisecond, true, 0, 100 * time.Millisecond},
+		{"caps longer caller deadline", timeout, time.Hour, true, timeout - 100*time.Millisecond, timeout},
+		{"zero timeout keeps caller deadline", 0, time.Hour, true, time.Hour - time.Minute, time.Hour},
 		{"zero timeout is a no-op", 0, 0, false, 0, 0},
 		{"negative timeout is a no-op", -time.Second, 0, false, 0, 0},
 	}

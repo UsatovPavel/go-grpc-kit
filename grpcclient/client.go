@@ -53,10 +53,11 @@ func WithInsecure() Option {
 	return func(c *config) { c.insecure = true }
 }
 
-// WithCallTimeout applies a default deadline of d to unary calls whose
-// context has no deadline yet. Calls that already carry a deadline keep it,
-// whether it is shorter or longer. Streaming calls are not affected. A
-// value of zero or less disables the default.
+// WithCallTimeout bounds every unary call to at most d. The timeout is
+// always applied with context.WithTimeout, so the effective deadline is the
+// earlier of the caller's deadline and now+d: a shorter caller deadline is
+// kept, and a longer one (or none) is capped at d. Streaming calls are not
+// affected. A value of zero or less disables the limit.
 func WithCallTimeout(d time.Duration) Option {
 	return func(c *config) { c.callTimeout = d }
 }
@@ -131,13 +132,14 @@ func Dial(target string, opts ...Option) (*grpc.ClientConn, error) {
 	return conn, nil
 }
 
-// TimeoutInterceptor returns a unary client interceptor that applies a
-// deadline of d to calls whose context has none. It is what
+// TimeoutInterceptor returns a unary client interceptor that limits each
+// call to at most d. The resulting deadline is min(caller deadline, now+d).
+// It is what
 // [WithCallTimeout] installs; it is exported for use with custom
 // connections. A d of zero or less makes it a no-op.
 func TimeoutInterceptor(d time.Duration) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		if _, ok := ctx.Deadline(); !ok && d > 0 {
+		if d > 0 {
 			var cancel context.CancelFunc
 			ctx, cancel = context.WithTimeout(ctx, d)
 			defer cancel()
