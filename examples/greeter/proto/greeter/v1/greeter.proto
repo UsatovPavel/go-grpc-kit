@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package greeter.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/UsatovPavel/go-grpc-kit/examples/greeter/greeterpb/greeter/v1;greeterv1";
+
+// GreeterService says hello in a handful of languages.
+service GreeterService {
+  // SayHello returns a greeting for the given name.
+  rpc SayHello(SayHelloRequest) returns (SayHelloResponse);
+}
+
+// SayHelloRequest is the input of GreeterService.SayHello.
+message SayHelloRequest {
+  // Name of the person to greet.
+  string name = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  // Language is an optional ISO 639-1 code such as "en" or "es".
+  // Defaults to "en".
+  string language = 2 [(buf.validate.field).string.pattern = "^([a-z]{2})?$"];
+}
+
+// SayHelloResponse is the output of GreeterService.SayHello.
+message SayHelloResponse {
+  // Message is the greeting.
+  string message = 1;
+}
