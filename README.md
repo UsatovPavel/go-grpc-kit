@@ -115,15 +115,24 @@ express. Sentinels created with `errs.New` compare by identity, so
 `errs.KindOf` to branch on the broader category. Translation happens once,
 at the edge, in `grpcerr`:
 
-- an error that already carries a gRPC status passes through unchanged;
-- `context.Canceled` / `context.DeadlineExceeded` become `Canceled` / `DeadlineExceeded`;
-- a non-internal kind becomes the matching code, with `err.Error()` as the message;
-- `Internal` and unclassified errors become `codes.Internal` with a fixed
-  `"internal error"` message, so stack traces, SQL and hostnames don't leak to clients.
+1. an error with a kind (`*errs.Error` anywhere in the chain) gets the
+   matching code, with `err.Error()` as the message; `Internal` gets
+   `codes.Internal` with a fixed `"internal error"` message, so stack
+   traces, SQL and hostnames don't leak to clients;
+2. otherwise `context.Canceled` / `context.DeadlineExceeded` become
+   `Canceled` / `DeadlineExceeded`;
+3. otherwise an error that already carries a gRPC status passes through unchanged;
+4. anything else becomes `codes.Internal` with `"internal error"`.
+
+The kind goes first because it's the service's own decision. A status
+buried deeper in the chain may come from a downstream call, and it must
+not override what this service chose to report.
 
 On the client, `grpcerr.FromStatus` restores the kind and keeps the
-original status reachable via `status.FromError`. A service that forwards
-an upstream error therefore keeps its code.
+original status reachable via `status.FromError`. If a service returns
+such an error as-is, it's encoded by its kind: codes that have a kind
+keep their code, and the rest (`Aborted`, `Unimplemented`, ...) become
+`Internal`.
 
 ### Interceptor order
 

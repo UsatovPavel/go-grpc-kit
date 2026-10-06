@@ -71,17 +71,35 @@ type grpcStatuser interface {
 //
 // The rules, applied in order:
 //   - nil stays nil;
-//   - an error that already carries a gRPC status (anywhere in its chain) is
-//     returned as that status unchanged;
-//   - context.Canceled and context.DeadlineExceeded become codes.Canceled and
-//     codes.DeadlineExceeded;
-//   - an error whose kind is not Internal becomes the matching code, with
-//     err.Error() as the message;
+//   - if err's chain contains an *errs.Error, its kind decides the code:
+//     a non-Internal kind becomes the matching code with err.Error() as the
+//     message, and Internal becomes codes.Internal with [InternalMessage];
+//   - otherwise context.Canceled and context.DeadlineExceeded become
+//     codes.Canceled and codes.DeadlineExceeded;
+//   - otherwise an error that carries a gRPC status (anywhere in its chain)
+//     is returned as that status unchanged;
 //   - everything else becomes codes.Internal with [InternalMessage], so that
 //     implementation details do not leak to clients.
+//
+// The kind is checked first because it is the service's own decision: a
+// status embedded deeper in the chain may come from a downstream call and
+// must not override it.
 func ToStatus(err error) error {
 	if err == nil {
 		return nil
+	}
+	var e *errs.Error
+	if errors.As(err, &e) {
+		if e.Kind == errs.Internal {
+			return status.Error(codes.Internal, InternalMessage)
+		}
+		return status.Error(CodeOf(e.Kind), err.Error())
+	}
+	switch {
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, err.Error())
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, err.Error())
 	}
 	var se grpcStatuser
 	if errors.As(err, &se) {
@@ -89,12 +107,7 @@ func ToStatus(err error) error {
 			return st.Err()
 		}
 	}
-	switch kind := errs.KindOf(err); kind {
-	case errs.Internal:
-		return status.Error(codes.Internal, InternalMessage)
-	default:
-		return status.Error(CodeOf(kind), err.Error())
-	}
+	return status.Error(codes.Internal, InternalMessage)
 }
 
 // FromStatus converts a gRPC status error received by a client into an error
@@ -103,6 +116,10 @@ func ToStatus(err error) error {
 // The returned error unwraps to an *errs.Error, so errs.KindOf and
 // errors.As work on it, and it still implements GRPCStatus, so
 // status.FromError and status.Code keep returning the original status.
+// If such an error is returned from a server handler, [ToStatus] encodes it
+// by its kind: codes with a kind keep their code, while codes without one
+// (Unknown, Aborted, OutOfRange, Unimplemented, DataLoss) become
+// codes.Internal with [InternalMessage].
 // Errors that carry no status (including io.EOF) are returned unchanged, and
 // nil stays nil.
 func FromStatus(err error) error {

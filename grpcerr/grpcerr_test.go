@@ -42,6 +42,11 @@ func TestToStatus(t *testing.T) {
 		{"wrapped deadline", fmt.Errorf("query: %w", context.DeadlineExceeded), codes.DeadlineExceeded, "query: context deadline exceeded"},
 		{"status passes through", status.Error(codes.Aborted, "conflict"), codes.Aborted, "conflict"},
 		{"wrapped status passes through", fmt.Errorf("x: %w", status.Error(codes.Unimplemented, "nope")), codes.Unimplemented, "nope"},
+		{"kind wins over embedded status", fmt.Errorf("%w: %w", errs.New(errs.FailedPrecondition, "not ready"), status.Error(codes.Unavailable, "upstream down")), codes.FailedPrecondition, "not ready: rpc error: code = Unavailable desc = upstream down"},
+		{"internal kind wins over embedded status", fmt.Errorf("%w: %w", errs.New(errs.Internal, "bug"), status.Error(codes.NotFound, "gone")), codes.Internal, grpcerr.InternalMessage},
+		{"kind wins over context", fmt.Errorf("%w: %w", errs.New(errs.InvalidArgument, "bad"), context.Canceled), codes.InvalidArgument, "bad: context canceled"},
+		{"context wins over embedded status", fmt.Errorf("%w: %w", context.DeadlineExceeded, status.Error(codes.Unavailable, "down")), codes.DeadlineExceeded, "context deadline exceeded: rpc error: code = Unavailable desc = down"},
+		{"converted remote error with unmapped code is masked", grpcerr.FromStatus(status.Error(codes.Aborted, "conflict")), codes.Internal, grpcerr.InternalMessage},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -135,8 +140,8 @@ func TestRoundTrip(t *testing.T) {
 			if got := errs.KindOf(back); got != kind {
 				t.Fatalf("round trip kind = %v, want %v", got, kind)
 			}
-			// A converted error passes through ToStatus again unchanged,
-			// so proxies preserve the upstream code.
+			// A converted error is re-encoded by its kind, which for
+			// mapped codes yields the upstream code again.
 			if got := status.Code(grpcerr.ToStatus(back)); got != grpcerr.CodeOf(kind) {
 				t.Fatalf("re-encoded code = %v, want %v", got, grpcerr.CodeOf(kind))
 			}
